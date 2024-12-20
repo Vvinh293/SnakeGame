@@ -57,7 +57,7 @@ public class SnakeGameStartScreen {
                         startGame(frame);
                     } else if (e.getKeyCode() == KeyEvent.VK_SPACE) {
                         // Hiển thị popup hướng dẫn khi nhấn 'SPACE'
-                        JOptionPane.showMessageDialog(frame, "Use up, down, left and right arrows to make the snake move towards the food, if it hits the animal the game will end.", "Instructions", JOptionPane.INFORMATION_MESSAGE);
+                        JOptionPane.showMessageDialog(frame, "Sử dụng các phím LÊN, XUỐNG, TRÁI, PHẢI để điều khiển rắn tới ăn mồi, nếu xảy ra va chạm với chướng ngại vật hoặc thân rắn trò chơi sẽ kết thúc ", "Instructions", JOptionPane.INFORMATION_MESSAGE);
                     }
                 }
             });
