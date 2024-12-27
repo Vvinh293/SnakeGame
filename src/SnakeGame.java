@@ -1,38 +1,56 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.LinkedList;
+import javax.sound.sampled.*;
+import java.io.File;
+import java.io.IOException;
+
 
 public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     private final int BOARD_WIDTH = 1024;  // Chiều rộng bảng trò chơi
     private final int BOARD_HEIGHT = 800; // Chiều cao bảng trò chơi
     private final int UNIT_SIZE = 25;     // Kích thước mỗi đơn vị (pixel) của rắn
-    private Snake snake;                   // Đối tượng Snake đại diện cho rắn
-    private Food food;                     // Đối tượng Food đại diện cho thức ăn
-    private boolean running = false;       // Trạng thái của trò chơi (chạy hoặc dừng)
-    private Timer timer;                   // Đồng hồ thời gian cập nhật trò chơi
-    private Timer countdownTimer;          // Đồng hồ thời gian đếm ngược trước khi bắt đầu trò chơi
-    private int countdown = 3;             // Số giây còn lại trước khi trò chơi bắt đầu
+    private Snake snake;                  // Đối tượng Snake đại diện cho rắn
+    private Food food;                    // Đối tượng Food đại diện cho thức ăn
+    private LinkedList<Point> obstacles; // Danh sách các chướng ngại vật
+    private boolean running = false;      // Trạng thái của trò chơi (chạy hoặc dừng)
+    private Timer timer;                  // Đồng hồ thời gian cập nhật trò chơi
+    private Timer countdownTimer;         // Đồng hồ thời gian đếm ngược trước khi bắt đầu trò chơi
+    private int countdown = 3;            // Số giây còn lại trước khi trò chơi bắt đầu
     private boolean countdownStarted = false; // Kiểm tra nếu đếm ngược đã bắt đầu
+    private Clip eatFoodClip;   // Clip cho âm thanh ăn mồi
+    private Clip collisionClip;  // Clip cho âm thanh va chạm
 
-    private ImageIcon backgroundIcon;      // Hình nền của trò chơi         
+    private ImageIcon backgroundIcon;     // Hình nền của trò chơi
+    private Image obstacleImage;          // Hình ảnh chướng ngại vật
 
     public SnakeGame() {
-        this.setPreferredSize(new Dimension(BOARD_WIDTH, BOARD_HEIGHT)); 
+        this.setPreferredSize(new Dimension(BOARD_WIDTH, BOARD_HEIGHT));
+        this.setFocusable(true);
+        this.addKeyListener(this);
+        this.setPreferredSize(new Dimension(BOARD_WIDTH, BOARD_HEIGHT));
         this.setFocusable(true);
         this.addKeyListener(this);
 
+        // Tải âm thanh
+        loadSounds();
+
         // Tải hình nền từ tệp
-        backgroundIcon = new ImageIcon("C:\\dev\\snake_game - Sao chép\\assets\\taoanhdep_text_to_img_27883.jpeg"); 
-        
-        // Khởi tạo rắn và thức ăn
-        snake = new Snake(UNIT_SIZE * 3, UNIT_SIZE * 3, UNIT_SIZE); 
-        food = new Food(UNIT_SIZE, BOARD_WIDTH, BOARD_HEIGHT); 
-        
+        backgroundIcon = new ImageIcon("C:\\dev\\snake_game - Sao chép\\assets\\taoanhdep_text_to_img_27883.jpeg");
+
+        // Khởi tạo rắn, thức ăn, và chướng ngại vật
+        snake = new Snake(UNIT_SIZE * 3, UNIT_SIZE * 3, UNIT_SIZE);
+        food = new Food(UNIT_SIZE, BOARD_WIDTH, BOARD_HEIGHT);
+        obstacles = new LinkedList<>();
+        obstacleImage = new ImageIcon("C:\\dev\\snake_game - Sao chép\\assets\\bomb_PNG38.png").getImage();
+        generateObstacles(8 ); // Sinh 5 chướng ngại vật ngẫu nhiên
+
         // Đồng hồ thời gian cho cập nhật trò chơi
-        timer = new Timer(100, this); 
-        
+        timer = new Timer(100, this);
+
         // Đồng hồ thời gian đếm ngược
-        countdownTimer = new Timer(1000, e  -> {
+        countdownTimer = new Timer(1000, e -> {
             countdown--; // Giảm 1 giây mỗi khi tick
             if (countdown == 0) {
                 countdownTimer.stop(); // Dừng đồng hồ thời gian đếm ngược
@@ -43,8 +61,75 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         timer.start(); // Bắt đầu đồng hồ thời gian trò chơi
     }
 
+    private void loadSounds() {
+        try {
+            // Tải âm thanh ăn mồi
+            AudioInputStream eatFoodStream = AudioSystem.getAudioInputStream(new File("C:\\dev\\snake_game - Sao chép\\assets\\eating (1).wav"));
+            eatFoodClip = AudioSystem.getClip();
+            eatFoodClip.open(eatFoodStream);
+
+            // Tải âm thanh va chạm
+            AudioInputStream collisionStream = AudioSystem.getAudioInputStream(new File("C:\\dev\\snake_game - Sao chép\\assets\\lose (1).wav"));
+            collisionClip = AudioSystem.getClip();
+            collisionClip.open(collisionStream);
+        } catch (UnsupportedAudioFileException | IOException | LineUnavailableException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Phát âm thanh  khi rắn ăn mồi 
+    private void playEatFoodSound() {
+        eatFoodClip.setFramePosition(0);  // Đặt lại vị trí âm thanh về đầu
+        eatFoodClip.start();              // Phát âm thanh
+    }
+
+    // Phát âm thanh khi rắn va chạm
+    private void playCollisionSound() {
+        collisionClip.setFramePosition(0);  // Đặt lại vị trí âm thanh về đầu
+        collisionClip.start();              // Phát âm thanh
+    }
+
+    private boolean isPointCollidingWithSnake(Point point) {
+        for (Point snakePart : snake.getBody()) {
+            if (snakePart.equals(point)) {
+                playCollisionSound();
+                return true; // Va chạm với thân rắn
+            }
+        }
+        return false;
+    }
+
+    private boolean checkCollisionWithObstacles() {
+        Point head = snake.getBody().getFirst();
+        for (Point obstacle : obstacles) {
+            Rectangle obstacleRect = new Rectangle(obstacle.x, obstacle.y, 50, 50);
+            if (obstacleRect.contains(head)) {
+                playCollisionSound();
+                return true; // Va chạm với chướng ngại vật
+            }
+        }
+        return false;
+    }
+
+    private void generateObstacles(int count) {
+        obstacles.clear(); // Xóa các chướng ngại vật cũ
+        for (int i = 0; i < count; i++) {
+            Point obstaclePosition;
+            do {
+                // Tạo vị trí ngẫu nhiên
+                obstaclePosition = new Point(
+                    (int) (Math.random() * (BOARD_WIDTH / UNIT_SIZE)) * UNIT_SIZE,
+                    (int) (Math.random() * (BOARD_HEIGHT / UNIT_SIZE)) * UNIT_SIZE
+                );
+            } while (obstaclePosition.equals(food.getPosition()) || isPointCollidingWithSnake(obstaclePosition));
+
+            obstacles.add(obstaclePosition); // Thêm chướng ngại vật
+        }
+    }
+
+
     private void returnToStartScreen() {
-        JFrame frame = (JFrame) SwingUtilities.getWindowAncestor(this); 
+        JFrame frame = (JFrame) SwingUtilities.getWindowAncestor(this);
         if (frame != null) {
             SnakeGameStartScreen.main(null); // Khởi động màn hình bắt đầu của trò chơi
             frame.dispose(); // Đóng khung cửa sổ hiện tại
@@ -53,21 +138,20 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
     private void gameOver(Graphics g) {
         String message = "Game Over! Score: " + (snake.getBody().size() - 1);
-
         JOptionPane.showMessageDialog(this, message, "Game Over", JOptionPane.INFORMATION_MESSAGE);
-
         int response = JOptionPane.showConfirmDialog(this, "Do you want to play again?", "Game Over", JOptionPane.YES_NO_OPTION);
 
         if (response == JOptionPane.YES_OPTION) {
-            resetGame(); // Khởi động lại trò chơi
+            resetGame();
         } else {
-            returnToStartScreen(); // Trở lại màn hình bắt đầu
+            returnToStartScreen();
         }
     }
 
     public void resetGame() {
         snake = new Snake(UNIT_SIZE * 3, UNIT_SIZE * 3, UNIT_SIZE); // Tạo lại rắn mới
         food = new Food(UNIT_SIZE, BOARD_WIDTH, BOARD_HEIGHT); // Tạo lại thức ăn mới
+        generateObstacles(5); // Sinh lại chướng ngại vật
         running = false; // Đặt trạng thái trò chơi về false
         countdown = 3; // Đặt lại đếm ngược
         countdownStarted = false;
@@ -78,47 +162,43 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     @Override
     public void actionPerformed(ActionEvent e) {
         if (running) {
-            snake.move(); // Di chuyển rắn
-            if (snake.checkCollisionWithWall(BOARD_WIDTH, BOARD_HEIGHT) || snake.checkCollisionWithItself()) {
+            snake.move();
+            if (snake.checkCollisionWithWall(BOARD_WIDTH, BOARD_HEIGHT) || 
+                snake.checkCollisionWithItself() || 
+                checkCollisionWithObstacles()) {
                 running = false;
-                gameOver(null); // Kết thúc trò chơi
+                gameOver(null);
             }
-            checkFood(); // Kiểm tra nếu rắn ăn thức ăn
+            checkFood();
         }
-        repaint(); // Vẽ lại màn hình
+        repaint();
     }
 
     private void checkFood() {
         if (snake.getBody().getFirst().equals(food.getPosition())) {
-            snake.grow(); // Mở rộng rắn khi ăn thức ăn
-            generateFood(); // Tạo thức ăn mới
+            snake.grow();
+            generateFood();
+            playEatFoodSound();  // Phát âm thanh ăn mồi
         }
     }
+
 
     private void generateFood() {
         Point newFoodPosition;
         do {
-            // Tạo vị trí ngẫu nhiên cho thức ăn
             newFoodPosition = new Point(
                 (int) (Math.random() * (BOARD_WIDTH / UNIT_SIZE)) * UNIT_SIZE,
                 (int) (Math.random() * (BOARD_HEIGHT / UNIT_SIZE)) * UNIT_SIZE
             );
-        } while (isFoodCollidingWithObstacles(newFoodPosition));
+        } while (isFoodCollidingWithObstacles(newFoodPosition) || isPointCollidingWithSnake(newFoodPosition));
 
-        food.setPosition(newFoodPosition); // Đặt vị trí thức ăn mới
+        food.setPosition(newFoodPosition);
     }
 
     private boolean isFoodCollidingWithObstacles(Point foodPosition) {
-        for (int x = 0; x < BOARD_WIDTH; x += UNIT_SIZE) {
-            if (foodPosition.equals(new Point(x, 0)) ||
-                foodPosition.equals(new Point(x, BOARD_HEIGHT - UNIT_SIZE))) {
-                return true; // Thức ăn va chạm với biên trên hoặc dưới
-            }
-        }
-        for (int y = 0; y < BOARD_HEIGHT; y += UNIT_SIZE) {
-            if (foodPosition.equals(new Point(0, y)) ||
-                foodPosition.equals(new Point(BOARD_WIDTH - UNIT_SIZE, y))) {
-                return true; // Thức ăn va chạm với biên trái hoặc phải
+        for (Point obstacle : obstacles) {
+            if (foodPosition.equals(obstacle)) {
+                return true;
             }
         }
         return false;
@@ -136,7 +216,6 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
             for (int i = 0; i < snake.getBody().size(); i++) {
                 Point p = snake.getBody().get(i);
                 if (i == 0) {
-                    // Vẽ đầu rắn theo hướng
                     switch (snake.getDirection()) {
                         case KeyEvent.VK_LEFT:
                             g.drawImage(loadImage("C:\\dev\\snake_game - Sao chép\\assets\\snake_head_RtL.png"), p.x, p.y, UNIT_SIZE, UNIT_SIZE, this);
@@ -152,7 +231,6 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
                             break;
                     }
                 } else if (i == snake.getBody().size() - 1) {
-                    // Lấy hướng di chuyển của đoạn thân rắn ngay trước đuôi
                     int previousDirection = snake.getDirection();
                     if (i - 1 >= 0) {
                         Point previousSegment = snake.getBody().get(i - 1);
@@ -165,7 +243,6 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
                         else if (dy < 0) previousDirection = KeyEvent.VK_UP;
                     }
 
-                    // Vẽ đuôi rắn theo hướng của đoạn thân rắn ngay trước đuôi
                     switch (previousDirection) {
                         case KeyEvent.VK_LEFT:
                             g.drawImage(loadImage("C:\\dev\\snake_game - Sao chép\\assets\\tail_RtL.png"), p.x, p.y, UNIT_SIZE, UNIT_SIZE, this);
@@ -181,13 +258,17 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
                             break;
                     }
                 } else {
-                    // Vẽ thân rắn
                     g.drawImage(loadImage("C:\\dev\\snake_game - Sao chép\\assets\\body2.png"), p.x, p.y, UNIT_SIZE, UNIT_SIZE, this);
                 }
             }
 
             // Vẽ thức ăn
             g.drawImage(food.getFoodImage(), food.getPosition().x, food.getPosition().y, UNIT_SIZE, UNIT_SIZE, this);
+
+            // Vẽ chướng ngại vật
+            for (Point obstacle : obstacles) {
+                g.drawImage(obstacleImage, obstacle.x, obstacle.y, 50      , 50     , this);
+            }
 
             // Hiển thị điểm
             g.setColor(Color.WHITE);
@@ -225,10 +306,10 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     }
 
     @Override
-    public void keyTyped(KeyEvent e) { }
+    public void keyTyped(KeyEvent e) {}
 
     @Override
-    public void keyReleased(KeyEvent e) { }
+    public void keyReleased(KeyEvent e) {}
 
     public static void main(String[] args) {
         JFrame frame = new JFrame("Snake Game");
